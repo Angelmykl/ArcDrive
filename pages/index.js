@@ -1,3 +1,5 @@
+import { ethers } from "ethers";
+import { supabase } from "../lib/supabase";
 import { useState, useEffect } from "react";
 import { ConnectButton, useActiveAccount } from "thirdweb/react";
 import { createThirdwebClient } from "thirdweb";
@@ -14,28 +16,30 @@ export default function Home() {
   const [sharedFiles, setSharedFiles] = useState([]);
   const [status, setStatus] = useState("");
 
-  useEffect(() => {
+ useEffect(() => {
   if (!account) return;
 
-  fetch(`/api/share?address=${account.address}`)
-    .then((res) => res.json())
-    .then((data) => {
-      setSharedFiles(data.files || []);
-    })
-    .catch((err) => {
-      console.error("Failed to load shared files:", err);
-    });
+  async function loadFiles() {
+    const { data } = await supabase
+      .from("files")
+      .select("*")
+      .eq("wallet", account.address);
 
-}, [account]);
+    if (data) {
+      setFiles(data);
+    }
 
-useEffect(() => {
-  if (!account) return;
+    const { data: shared } = await supabase
+      .from("shared_files")
+      .select("*")
+      .eq("receiver", account.address);
 
-  const saved = localStorage.getItem(`arcdrive_files_${account.address}`);
-
-  if (saved) {
-    setFiles(JSON.parse(saved));
+    if (shared) {
+      setSharedFiles(shared);
+    }
   }
+
+  loadFiles();
 }, [account]);
 
   function toBase64(buffer) {
@@ -81,14 +85,14 @@ useEffect(() => {
     };
   }
 
-  function saveKey(cid, key, iv) {
-    if (!account) return;
+ function saveKey(cid, key, iv) {
+  if (!account) return;
 
-    localStorage.setItem(
-      `arcdrive_${account.address}_${cid}`,
-      JSON.stringify({ key, iv })
-    );
-  }
+  localStorage.setItem(
+    `arcdrive_${account.address}_${cid}`,
+    JSON.stringify({ key, iv })
+  );
+}
 
   function loadKey(cid) {
     if (!account) return null;
@@ -101,111 +105,176 @@ useEffect(() => {
   }
 
   async function payForUpload(account) {
-    try {
-      return await window.ethereum.request({
-        method: "eth_sendTransaction",
-        params: [{
-          from: account.address,
-          to: account.address,
-          value: "0x38d7ea4c68000",
-          gas: "0x5208",
-        }],
-      });
-    } catch {
-      return null;
-    }
+  try {
+    // ARC TESTNET
+    const ARC_CHAIN_ID = "0x4cef52";
+
+    // Switch to Arc network
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: ARC_CHAIN_ID }],
+    });
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+
+    const signer = await provider.getSigner();
+
+    // YOUR WALLET (receives upload fee)
+    const RECEIVER = account.address;
+
+    // 0.01 USDC
+    const tx = await signer.sendTransaction({
+      to: RECEIVER,
+      value: ethers.parseEther("0.001"),
+    });
+
+    setStatus("Waiting for payment confirmation...");
+
+    await tx.wait();
+
+    return true;
+
+  } catch (err) {
+    console.error(err);
+    return false;
   }
+}
+
+async function payForShare(account) {
+  try {
+    const ARC_CHAIN_ID = "0x4cef52";
+
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: ARC_CHAIN_ID }],
+    });
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+
+    const signer = await provider.getSigner();
+
+    const RECEIVER = account.address;
+
+    const tx = await signer.sendTransaction({
+      to: RECEIVER,
+      value: ethers.parseEther("0.0005"),
+    });
+
+    setStatus("Waiting for share payment confirmation...");
+
+    await tx.wait();
+
+    return true;
+
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+}
 
   async function handleUpload() {
-    if (!selectedFile) return setStatus("Select a file first");
-    if (!account) return setStatus("Connect wallet");
+  if (!selectedFile) return setStatus("Select a file first");
+  if (!account) return setStatus("Connect wallet");
 
-    try {
-      setStatus("Pay to upload...");
-      const paid = await payForUpload(account);
-      if (!paid) return setStatus("Payment cancelled ❌");
+  try {
+    setStatus("Pay to upload...");
 
-      setStatus("Encrypting...");
-      const { encrypted, key, iv } = await encryptFile(selectedFile);
+    const paid = await payForUpload(account);
 
-      // 🔐 Ask for sharing
-      const recipient = prompt("Enter wallet to share with (optional):");
-
-      const encryptedBlob = new Blob(
-        [JSON.stringify({ encrypted })],
-        { type: "application/json" }
-      );
-
-      const fileToUpload = new File(
-        [encryptedBlob],
-        selectedFile.name + ".enc"
-      );
-
-      setStatus("Uploading...");
-
-      const formData = new FormData();
-      formData.append("file", fileToUpload);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const raw = await res.text();
-      const data = JSON.parse(raw);
-
-      if (!data.IpfsHash) throw new Error("Upload failed");
-
-      const cid = "ipfs://" + data.IpfsHash;
-
-      saveKey(cid, key, iv);
-
-      // 🔐 Share logic
-      if (recipient && recipient !== account.address) {
-        try {
-          const encryptedKey = await window.ethereum.request({
-            method: "eth_encrypt",
-            params: [key, recipient],
-          });
-
-          localStorage.setItem(
-            `arcdrive_shared_${recipient}_${cid}`,
-            JSON.stringify({ encryptedKey, iv })
-          );
-        } catch (e) {
-          console.log("Share failed", e);
-        }
-      }
-
-      const updatedFiles = [
-        { name: selectedFile.name, cid },
-        ...files,
-      ];
-
-      setFiles(updatedFiles);
-
-      localStorage.setItem(
-        `arcdrive_files_${account.address}`,
-        JSON.stringify(updatedFiles)
-      );
-
-      setSelectedFile(null);
-      setStatus("Upload successful ✅");
-
-    } catch (err) {
-      console.error(err);
-      setStatus("Upload failed ❌ " + err.message);
+    if (!paid) {
+      setStatus("Payment cancelled ❌");
+      return;
     }
+
+    setStatus("Encrypting...");
+
+    const { encrypted, key, iv } = await encryptFile(selectedFile);
+
+    const encryptedBlob = new Blob(
+      [JSON.stringify({ encrypted })],
+      { type: "application/json" }
+    );
+
+    const fileToUpload = new File(
+      [encryptedBlob],
+      selectedFile.name + ".enc"
+    );
+
+    setStatus("Uploading...");
+
+    const formData = new FormData();
+    formData.append("file", fileToUpload);
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const raw = await res.text();
+    const data = JSON.parse(raw);
+
+    if (!data.IpfsHash) {
+      throw new Error("Upload failed");
+    }
+
+    const cid = "ipfs://" + data.IpfsHash;
+
+    // SAVE KEY LOCALLY
+    saveKey(cid, key, iv);
+
+    // SAVE TO SUPABASE
+    const { error } = await supabase
+      .from("files")
+      .insert([
+        {
+          wallet: account.address,
+          name: selectedFile.name,
+          cid,
+          encrypted_key: key,
+          iv,
+        },
+      ]);
+
+    if (error) {
+  console.error("SUPABASE ERROR:", error);
+
+  setStatus(
+    "Database save failed ❌ " +
+    (error.message || JSON.stringify(error))
+  );
+
+  return;
+}
+
+    // UPDATE UI
+    const newFile = {
+      wallet: account.address,
+      name: selectedFile.name,
+      cid,
+      encrypted_key: key,
+      iv,
+    };
+
+    setFiles((prev) => [newFile, ...prev]);
+
+    setSelectedFile(null);
+
+    setStatus("Upload successful ✅");
+
+  } catch (err) {
+    console.error(err);
+    setStatus("Upload failed ❌ " + err.message);
   }
+}
 
   async function downloadFile(file) {
   try {
     let stored = loadKey(file.cid);
 
     // 🔐 Check shared access (FROM BACKEND)
-if (!stored && file.key && file.iv) {
+if (!stored && file.encrypted_key && file.iv) {
   stored = {
-    key: file.key,
+    key: file.encrypted_key,
     iv: file.iv,
   };
 }
@@ -259,15 +328,35 @@ if (!stored && file.key && file.iv) {
 async function shareFile(file) {
   try {
     const recipient = prompt("Enter wallet address:");
+
     if (!recipient) return;
 
-    const stored = loadKey(file.cid);
+    // 💰 PAY SHARE FEE
+    setStatus("Paying share fee...");
+
+    const paid = await payForShare(account);
+
+    if (!paid) {
+      setStatus("Share payment cancelled ❌");
+      return;
+    }
+
+    let stored = loadKey(file.cid);
+
+    // fallback from Supabase
+    if (!stored && file.encrypted_key && file.iv) {
+      stored = {
+        key: file.encrypted_key,
+        iv: file.iv,
+      };
+    }
+
     if (!stored) {
       alert("No encryption key found ❌");
       return;
     }
 
-    // 🔐 STEP A — SIGN (wallet popup)
+    // wallet popup
     await window.ethereum.request({
       method: "personal_sign",
       params: [
@@ -276,37 +365,35 @@ async function shareFile(file) {
       ],
     });
 
-    let encryptedKey = stored.key;
+    const { error } = await supabase
+      .from("shared_files")
+      .insert([
+        {
+          owner: account.address,
+          receiver: recipient,
+          name: file.name,
+          cid: file.cid,
+          encrypted_key: stored.key,
+          iv: stored.iv,
+        },
+      ]);
 
-    // 🔒 STEP C — TRY REAL ENCRYPTION (if supported)
-    try {
-      const publicKey = await window.ethereum.request({
-        method: "eth_getEncryptionPublicKey",
-        params: [recipient],
-      });
+    if (error) {
+  console.error("SHARE ERROR:", error);
 
-      encryptedKey = btoa(publicKey + ":" + stored.key); // fallback simple encoding
-    } catch (e) {
-      console.warn("Encryption not supported, fallback used");
-    }
+  alert(
+    "Sharing failed ❌ " +
+    (error.message || JSON.stringify(error))
+  );
 
-    // 🌍 STEP B — SEND TO BACKEND (GLOBAL)
-    await fetch("/api/share", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: account.address,
-        to: recipient,
-        cid: file.cid,
-        name: file.name,
-        key: encryptedKey,
-        iv: stored.iv,
-      }),
-    });
+  return;
+}
 
-    alert("File shared globally ✅");
+    setStatus("File shared successfully ✅");
+
+setTimeout(() => {
+  setStatus("");
+}, 5000);
 
   } catch (err) {
     console.error(err);
