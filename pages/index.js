@@ -3,6 +3,10 @@ import { supabase } from "../lib/supabase";
 import { useState, useEffect } from "react";
 import { ConnectButton, useActiveAccount } from "thirdweb/react";
 import { createThirdwebClient } from "thirdweb";
+import {
+  CONTRACT_ADDRESS,
+  CONTRACT_ABI,
+} from "../lib/contract";
 
 const client = createThirdwebClient({
   clientId: process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID,
@@ -246,6 +250,28 @@ async function payForShare(account) {
   return;
 }
 
+// 🚀 REGISTER ON ARC BLOCKCHAIN
+const provider = new ethers.BrowserProvider(window.ethereum);
+
+const signer = await provider.getSigner();
+
+const contract = new ethers.Contract(
+  CONTRACT_ADDRESS,
+  CONTRACT_ABI,
+  signer
+);
+
+setStatus("Registering ownership on Arc...");
+
+const tx = await contract.registerFile(
+  cid,
+  selectedFile.name
+);
+
+await tx.wait();
+
+setStatus("File ownership registered on-chain ✅");
+
     // UPDATE UI
     const newFile = {
       wallet: account.address,
@@ -365,29 +391,25 @@ async function shareFile(file) {
       ],
     });
 
-    const { error } = await supabase
-      .from("shared_files")
-      .insert([
-        {
-          owner: account.address,
-          receiver: recipient,
-          name: file.name,
-          cid: file.cid,
-          encrypted_key: stored.key,
-          iv: stored.iv,
-        },
-      ]);
+    // 🚀 BLOCKCHAIN SHARE
+const provider = new ethers.BrowserProvider(window.ethereum);
 
-    if (error) {
-  console.error("SHARE ERROR:", error);
+const signer = await provider.getSigner();
 
-  alert(
-    "Sharing failed ❌ " +
-    (error.message || JSON.stringify(error))
-  );
+const contract = new ethers.Contract(
+  CONTRACT_ADDRESS,
+  CONTRACT_ABI,
+  signer
+);
 
-  return;
-}
+setStatus("Confirm share permission on Arc...");
+
+const tx = await contract.shareFile(
+  file.cid,
+  recipient
+);
+
+await tx.wait();
 
     setStatus("File shared successfully ✅");
 
@@ -407,7 +429,7 @@ setTimeout(() => {
         <div>
           <h1 style={styles.title}>ArcDrive</h1>
           <p style={styles.subtitle}>
-            Decentralized cloud storage built on Arc Network. Own your Files. Pay with USDC
+            Decentralized cloud storage built on Arc Network. Own your Files. Pay with USDC.
           </p>
         </div>
 

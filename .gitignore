@@ -1,4 +1,8 @@
 node_modules
 .next
+.env
 .env.local
 shared.json
+artifacts
+cache
+ignition/deployments
