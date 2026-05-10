@@ -1,3 +1,4 @@
+import DashboardLayout from "../components/DashboardLayout";
 import { ethers } from "ethers";
 import { supabase } from "../lib/supabase";
 import { useState, useEffect } from "react";
@@ -19,6 +20,9 @@ export default function Home() {
   const [files, setFiles] = useState([]);
   const [sharedFiles, setSharedFiles] = useState([]);
   const [status, setStatus] = useState("");
+
+const [showAllFiles, setShowAllFiles] = useState(false);
+const [showAllShared, setShowAllShared] = useState(false);
 
  useEffect(() => {
   if (!account) return;
@@ -410,6 +414,24 @@ const tx = await contract.shareFile(
 );
 
 await tx.wait();
+const { error } = await supabase
+  .from("shared_files")
+  .insert([
+    {
+      owner: account.address,
+      receiver: recipient,
+      name: file.name,
+      cid: file.cid,
+      encrypted_key: stored.key,
+      iv: stored.iv,
+    },
+  ]);
+
+if (error) {
+  console.error(error);
+  alert("Failed to save shared file ❌");
+  return;
+}
 
     setStatus("File shared successfully ✅");
 
@@ -424,152 +446,404 @@ setTimeout(() => {
 }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
+  <DashboardLayout
+    client={client}
+    files={files}
+    sharedFiles={sharedFiles}
+  >
+
+  {/* UPLOAD SECTION */}
+<div
+  style={{
+    background: "rgba(15,23,42,0.8)",
+    padding: "28px",
+    borderRadius: "24px",
+    marginBottom: "30px",
+    border: "1px solid rgba(255,255,255,0.05)",
+  }}
+>
+  <h2
+    style={{
+      marginBottom: "20px",
+      fontSize: "18px",
+    }}
+  >
+    Upload File
+  </h2>
+
+  <div
+    style={{
+      display: "flex",
+      gap: "20px",
+      alignItems: "center",
+      flexWrap: "wrap",
+    }}
+  >
+    <input
+      type="file"
+      onChange={(e) =>
+        setSelectedFile(e.target.files[0])
+      }
+      style={{
+        padding: "14px",
+        borderRadius: "14px",
+        background: "#020617",
+        border: "1px solid rgba(255,255,255,0.08)",
+        color: "white",
+        flex: 1,
+        minWidth: "250px",
+      }}
+    />
+
+    <button
+      onClick={handleUpload}
+      style={{
+        background:
+          "linear-gradient(to right, #4f46e5, #7c3aed)",
+        border: "none",
+        color: "white",
+        padding: "14px 28px",
+        borderRadius: "14px",
+        cursor: "pointer",
+        fontWeight: "600",
+        fontSize: "15px",
+      }}
+    >
+      Upload
+    </button>
+  </div>
+
+  {status && (
+    <p
+      style={{
+        marginTop: "18px",
+        color: "#94a3b8",
+      }}
+    >
+      {status}
+    </p>
+  )}
+</div>
+
+{/* FILES SECTION */}
+<div
+  id="files"
+  style={{
+    background: "rgba(15,23,42,0.8)",
+    padding: "28px",
+    borderRadius: "24px",
+    border: "1px solid rgba(255,255,255,0.05)",
+    marginBottom: "30px",
+  }}
+>
+  <h2
+    style={{
+      marginBottom: "24px",
+      fontSize: "24px",
+    }}
+  >
+    My Files
+  </h2>
+
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: "16px",
+    }}
+  >
+    {(showAllFiles ? files : files.slice(0, 5)).map((file, i) => (
+      <div
+        key={i}
+        style={{
+          background: "#020617",
+          borderRadius: "18px",
+          padding: "14px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "14px",
+          border:
+            "1px solid rgba(255,255,255,0.04)",
+        }}
+      >
         <div>
-          <h1 style={styles.title}>ArcDrive</h1>
-          <p style={styles.subtitle}>
-            Decentralized cloud storage built on Arc Network. Own your Files. Pay with USDC.
-          </p>
+          <h3
+            style={{
+              marginBottom: "8px",
+              fontSize: "17px",
+            }}
+          >
+            {file.name}
+          </h3>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "10px",
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                background: "rgba(34,197,94,0.15)",
+                color: "#22c55e",
+                padding: "6px 10px",
+                borderRadius: "999px",
+                fontSize: "12px",
+              }}
+            >
+              Encrypted
+            </span>
+
+            <span
+              style={{
+                background: "rgba(59,130,246,0.15)",
+                color: "#3b82f6",
+                padding: "6px 10px",
+                borderRadius: "999px",
+                fontSize: "12px",
+              }}
+            >
+              IPFS
+            </span>
+
+            <span
+              style={{
+                background: "rgba(168,85,247,0.15)",
+                color: "#a855f7",
+                padding: "6px 10px",
+                borderRadius: "999px",
+                fontSize: "12px",
+              }}
+            >
+              Arc Verified
+            </span>
+          </div>
         </div>
 
-        <ConnectButton client={client} />
-      </div>
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => downloadFile(file)}
+            style={{
+              background:
+                "rgba(34,197,94,0.12)",
+              color: "#22c55e",
+              border:
+                "1px solid rgba(34,197,94,0.2)",
+              padding: "12px 18px",
+              borderRadius: "12px",
+              cursor: "pointer",
+              fontWeight: "600",
+            }}
+          >
+            Download
+          </button>
 
-      <div style={styles.card}>
-        <h3>Upload</h3>
-
-        <div style={styles.uploadRow}>
-          <input
-            type="file"
-            onChange={(e) => setSelectedFile(e.target.files[0])}
-            style={styles.fileInput}
-          />
-
-          <button style={styles.button} onClick={handleUpload}>
-            Upload
+          <button
+            onClick={() => shareFile(file)}
+            style={{
+              background:
+                "rgba(245,158,11,0.12)",
+              color: "#f59e0b",
+              border:
+                "1px solid rgba(245,158,11,0.2)",
+              padding: "12px 18px",
+              borderRadius: "12px",
+              cursor: "pointer",
+              fontWeight: "600",
+            }}
+          >
+            Share
           </button>
         </div>
-
-        {status && <p style={styles.status}>{status}</p>}
       </div>
+    ))}
 
-      <div style={styles.card}>
-        <h3>My Files</h3>
+{files.length > 5 && (
+  <button
+    onClick={() =>
+      setShowAllFiles(!showAllFiles)
+    }
+    style={{
+      marginTop: "20px",
+      background: "transparent",
+      color: "#7c3aed",
+      border:
+        "1px solid rgba(124,58,237,0.3)",
+      padding: "10px 16px",
+      borderRadius: "10px",
+      cursor: "pointer",
+      fontWeight: "600",
+      fontSize: "14px",
+    }}
+  >
+    {showAllFiles
+      ? "Show Less"
+      : "View All Files"}
+  </button>
+)}
 
-        {files.map((file, i) => (
-  <div key={i} style={styles.fileCard}>
-    <span>{file.name}</span>
+  </div>
+</div>
 
-    <div style={{ display: "flex", gap: "8px" }}>
-      <button
-        style={styles.downloadBtn}
-        onClick={() => downloadFile(file)}
-      >
-        Download + Decrypt
-      </button>
+{/* SHARED FILES */}
+<div
+  id="shared"
+  style={{
+    background: "rgba(15,23,42,0.8)",
+    padding: "28px",
+    borderRadius: "24px",
+    border: "1px solid rgba(255,255,255,0.05)",
+  }}
+>
+  <h2
+    style={{
+      marginBottom: "24px",
+      fontSize: "24px",
+    }}
+  >
+    Shared With Me
+  </h2>
 
-      <button
-        style={{ ...styles.downloadBtn, background: "#f59e0b" }}
-        onClick={() => shareFile(file)}
-      >
-        Share
-      </button>
+  {sharedFiles.length === 0 ? (
+    <p style={{ color: "#64748b" }}>
+      No shared files yet
+    </p>
+  ) : (
+    <>
+      {(showAllShared
+        ? sharedFiles
+        : sharedFiles.slice(0, 5)
+      ).map((file, i) => (
+        <div
+          key={i}
+          style={{
+            background: "#020617",
+            borderRadius: "18px",
+            padding: "14px",
+            marginBottom: "14px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
+          <span>{file.name}</span>
+
+          <button
+            onClick={() => downloadFile(file)}
+            style={{
+              background:
+                "rgba(59,130,246,0.12)",
+              color: "#3b82f6",
+              border:
+                "1px solid rgba(59,130,246,0.2)",
+              padding: "12px 18px",
+              borderRadius: "12px",
+              cursor: "pointer",
+              fontWeight: "600",
+            }}
+          >
+            Download
+          </button>
+        </div>
+      ))}
+
+      {sharedFiles.length > 5 && (
+        <button
+          onClick={() =>
+            setShowAllShared(!showAllShared)
+          }
+          style={{
+            marginTop: "20px",
+            background: "transparent",
+            color: "#3b82f6",
+            border:
+              "1px solid rgba(59,130,246,0.3)",
+            padding: "10px 16px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            fontWeight: "600",
+            fontSize: "14px",
+          }}
+        >
+          {showAllShared
+            ? "Show Less"
+            : "View All Shared Files"}
+        </button>
+      )}
+    </>
+  )}
+</div>
+
+{/* ACTIVITY */}
+<div
+  id="activity"
+  style={{
+    background: "rgba(15,23,42,0.8)",
+    padding: "28px",
+    borderRadius: "24px",
+    border: "1px solid rgba(255,255,255,0.05)",
+    marginTop: "30px",
+  }}
+>
+  <h2
+    style={{
+      marginBottom: "24px",
+      fontSize: "24px",
+    }}
+  >
+    Activity
+  </h2>
+
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: "14px",
+    }}
+  >
+    <div
+      style={{
+        background: "#020617",
+        padding: "16px",
+        borderRadius: "14px",
+      }}
+    >
+      File uploaded to IPFS
+    </div>
+
+    <div
+      style={{
+        background: "#020617",
+        padding: "16px",
+        borderRadius: "14px",
+      }}
+    >
+      Ownership registered on Arc
+    </div>
+
+    <div
+      style={{
+        background: "#020617",
+        padding: "16px",
+        borderRadius: "14px",
+      }}
+    >
+      File shared on-chain
     </div>
   </div>
-))}
-      </div>
+</div>
 
-      {/* 🔐 NEW SECTION */}
-      <div style={styles.card}>
-        <h3>Shared With Me</h3>
-
-        {sharedFiles.length === 0 && (
-          <p style={{ opacity: 0.5 }}>No shared files</p>
-        )}
-
-        {sharedFiles.map((file, i) => (
-          <div key={i} style={styles.fileCard}>
-            <span>{file.name}</span>
-            <button style={styles.downloadBtn} onClick={() => downloadFile(file)}>
-              Download
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+</DashboardLayout>
+);
 }
-const styles = {
-  container: {
-    background: "#020617",
-    minHeight: "100vh",
-    padding: "30px",
-    color: "white",
-    fontFamily: "sans-serif",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "20px",
-  },
-  title: {
-    fontSize: "34px",
-    fontWeight: "bold",
-  },
-  subtitle: {
-    opacity: 0.7,
-    marginTop: "5px",
-    fontSize: "14px",
-  },
-  card: {
-    background: "#0f172a",
-    padding: "20px",
-    borderRadius: "10px",
-    marginTop: "20px",
-  },
-  uploadRow: {
-    display: "flex",
-    gap: "10px",
-    alignItems: "center",
-    marginTop: "10px",
-  },
-  fileInput: {
-    padding: "6px",
-    borderRadius: "6px",
-    border: "1px solid #1e293b",
-    background: "#020617",
-    color: "white",
-  },
-  button: {
-    padding: "10px 16px",
-    background: "#3b82f6",
-    border: "none",
-    borderRadius: "6px",
-    color: "white",
-    cursor: "pointer",
-  },
-  downloadBtn: {
-    padding: "6px 12px",
-    background: "#22c55e",
-    border: "none",
-    borderRadius: "6px",
-    color: "white",
-    cursor: "pointer",
-  },
-  fileCard: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    background: "#020617",
-    padding: "10px",
-    borderRadius: "6px",
-    marginTop: "10px",
-  },
-  status: {
-    marginTop: "10px",
-    fontSize: "14px",
-    opacity: 0.8,
-  },
-};
