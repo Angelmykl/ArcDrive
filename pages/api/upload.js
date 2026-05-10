@@ -34,7 +34,7 @@ data.append("file", fs.createReadStream(fileData.filepath));
         {
           method: "POST",
           headers: {
-            pinata_api_key: process.env.NEXT_PUBLIC_PINATA_API_KEY,
+            pinata_api_key: process.env.PINATA_API_KEY,
             pinata_secret_api_key: process.env.PINATA_SECRET_API_KEY,
             ...data.getHeaders(),
           },
